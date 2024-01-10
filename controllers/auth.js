@@ -1,20 +1,30 @@
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
-
+const fsExtra = require("fs-extra");
+const path = require("path");
+const jimp = require("jimp");
+const gravatar = require("gravatar");
 const { User } = require("../models/user");
 const httpError = require("../helpers/httpError");
+const avatarsDir = path.resolve("public", "avatars");
+const uniqid = require("uniqid");
 
 const register = async (req, res, next) => {
   try {
     const { email, password } = req.body;
     const user = await User.findOne({ email });
     const hashPassword = await bcrypt.hash(password, 10);
+    const avatarURL = gravatar.url(email);
 
     if (user) {
       throw httpError(409, "Email is already in use.");
     }
 
-    const newUser = await User.create({ ...req.body, password: hashPassword });
+    const newUser = await User.create({
+      ...req.body,
+      password: hashPassword,
+      avatarURL,
+    });
     res.status(201).json({
       user: {
         email: newUser.email,
@@ -92,4 +102,33 @@ const patchSubscription = async (req, res, next) => {
   }
 };
 
-module.exports = { register, logIn, getCurrent, logOut, patchSubscription };
+const updateAvatar = async (req, res, next) => {
+  try {
+    const { _id } = req.user;
+    const tmpUpload = req.file.path;
+    const uniqPfx = uniqid();
+    const fileName = `${uniqPfx}_${req.file.originalname}`;
+    const resultUpload = path.join(avatarsDir, fileName);
+    const image = await jimp.read(tmpUpload);
+
+    await image.resize(250, 250).writeAsync(resultUpload);
+    await fsExtra.move(tmpUpload, resultUpload, { overwrite: true });
+
+    const avatarURL = path.join("public", "avatars", fileName);
+
+    await User.findByIdAndUpdate(_id, { avatarURL });
+
+    res.status(200).json({ avatarURL });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = {
+  register,
+  logIn,
+  getCurrent,
+  logOut,
+  patchSubscription,
+  updateAvatar,
+};
