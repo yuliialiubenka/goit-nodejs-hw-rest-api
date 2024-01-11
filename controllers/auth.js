@@ -104,6 +104,10 @@ const patchSubscription = async (req, res, next) => {
 
 const updateAvatar = async (req, res, next) => {
   try {
+    if (!req.file) {
+      throw next(httpError(400, "No image file attached."));
+    }
+
     const { _id } = req.user;
     const tmpUpload = req.file.path;
     const uniqPfx = uniqid();
