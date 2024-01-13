@@ -6,8 +6,10 @@ const jimp = require("jimp");
 const gravatar = require("gravatar");
 const { User } = require("../models/user");
 const httpError = require("../helpers/httpError");
+const sendEmail = require("../helpers/sendEmail");
 const avatarsDir = path.resolve("public", "avatars");
 const uniqid = require("uniqid");
+const { BASE_URL } = process.env;
 
 const register = async (req, res, next) => {
   try {
@@ -15,6 +17,7 @@ const register = async (req, res, next) => {
     const user = await User.findOne({ email });
     const hashPassword = await bcrypt.hash(password, 10);
     const avatarURL = gravatar.url(email);
+    const verificationToken = uniqid();
 
     if (user) {
       throw httpError(409, "Email is already in use.");
@@ -24,7 +27,26 @@ const register = async (req, res, next) => {
       ...req.body,
       password: hashPassword,
       avatarURL,
+      verificationToken,
     });
+
+    const verifyEmail = {
+      to: email,
+      subject: "Verify email",
+      html: `
+            <div style="max-width: 600px; margin: 0 auto; background-color: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);">
+                <h2 style="color: #333;">Thank you for registering!</h2>
+                <p style="color: #666;">Please confirm your registration by clicking the link below:</p>
+        
+                <a target="_blank" href="${BASE_URL}/api/users/verify/${verificationToken}" style="display: inline-block; background-color: #007bff; color: #fff; text-decoration: none; padding: 10px 20px; margin-top: 20px; border-radius: 5px;">Confirm Registration</a>
+        
+                <p style="color: #666; margin-top: 20px;">If you did not register on our website, please disregard this email.</p>
+            </div>
+          `,
+    };
+
+    await sendEmail(verifyEmail);
+
     res.status(201).json({
       user: {
         email: newUser.email,
@@ -52,6 +74,10 @@ const logIn = async (req, res, next) => {
 
     if (!passwordCompare) {
       throw httpError(401, errorMessage);
+    }
+
+    if (!user.verify) {
+      throw httpError(401, "Email is not verified!");
     }
 
     await User.findByIdAndUpdate(user._id, { token });
@@ -128,6 +154,50 @@ const updateAvatar = async (req, res, next) => {
   }
 };
 
+const resendVerifyEmail = async (req, res) => {
+  const { email } = req.body;
+
+  const user = await User.findOne({ email });
+
+  if (!user) throw httpError(404, "User not found");
+
+  if (user.verify) throw httpError(404, "Verification has already been passed");
+
+  const verifyEmail = {
+    to: email,
+    subject: "Verify email",
+    html: `
+            <div style="max-width: 600px; margin: 0 auto; background-color: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);">
+                <h2 style="color: #333;">Thank you for registering!</h2>
+                <p style="color: #666;">Please confirm your registration by clicking the link below:</p>
+        
+                <a target="_blank" href="${BASE_URL}/api/users/verify/${verificationToken}" style="display: inline-block; background-color: #007bff; color: #fff; text-decoration: none; padding: 10px 20px; margin-top: 20px; border-radius: 5px;">Confirm Registration</a>
+        
+                <p style="color: #666; margin-top: 20px;">If you did not register on our website, please disregard this email.</p>
+            </div>
+          `,
+  };
+
+  await sendEmail(verifyEmail);
+
+  res.status(200).json({ message: "Verification email sent" });
+};
+
+const verificationToken = async (req, res) => {
+  const { verificationToken } = req.params;
+  const user = await User.findOne({ verificationToken });
+  if (!user) {
+    res.status(404).json({ message: "User was not found." });
+  }
+  await User.findByIdAndUpdate(user.id, {
+    verificationToken: null,
+    verify: true,
+  });
+  res
+    .status(200)
+    .json({ message: "Verification has been successfully completed." });
+};
+
 module.exports = {
   register,
   logIn,
@@ -135,4 +205,6 @@ module.exports = {
   logOut,
   patchSubscription,
   updateAvatar,
+  resendVerifyEmail,
+  verificationToken,
 };
