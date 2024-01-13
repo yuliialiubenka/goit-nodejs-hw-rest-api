@@ -154,48 +154,57 @@ const updateAvatar = async (req, res, next) => {
   }
 };
 
-const resendVerifyEmail = async (req, res) => {
-  const { email } = req.body;
+const resendVerifyEmail = async (req, res, next) => {
+  try {
+    const { email } = req.body;
 
-  const user = await User.findOne({ email });
+    const user = await User.findOne({ email });
 
-  if (!user) throw httpError(404, "User not found");
+    if (!user) throw httpError(404, "User not found");
 
-  if (user.verify) throw httpError(404, "Verification has already been passed");
+    if (user.verify)
+      throw httpError(404, "Verification has already been passed");
 
-  const verifyEmail = {
-    to: email,
-    subject: "Verify email",
-    html: `
-            <div style="max-width: 600px; margin: 0 auto; background-color: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);">
-                <h2 style="color: #333;">Thank you for registering!</h2>
-                <p style="color: #666;">Please confirm your registration by clicking the link below:</p>
-        
-                <a target="_blank" href="${BASE_URL}/api/users/verify/${verificationToken}" style="display: inline-block; background-color: #007bff; color: #fff; text-decoration: none; padding: 10px 20px; margin-top: 20px; border-radius: 5px;">Confirm Registration</a>
-        
-                <p style="color: #666; margin-top: 20px;">If you did not register on our website, please disregard this email.</p>
-            </div>
-          `,
-  };
+    const verifyEmail = {
+      to: email,
+      subject: "Verify email",
+      html: `
+              <div style="max-width: 600px; margin: 0 auto; background-color: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);">
+                  <h2 style="color: #333;">Thank you for registering!</h2>
+                  <p style="color: #666;">Please confirm your registration by clicking the link below:</p>
+          
+                  <a target="_blank" href="${BASE_URL}/api/users/verify/${verificationToken}" style="display: inline-block; background-color: #007bff; color: #fff; text-decoration: none; padding: 10px 20px; margin-top: 20px; border-radius: 5px;">Confirm Registration</a>
+          
+                  <p style="color: #666; margin-top: 20px;">If you did not register on our website, please disregard this email.</p>
+              </div>
+            `,
+    };
 
-  await sendEmail(verifyEmail);
+    await sendEmail(verifyEmail);
 
-  res.status(200).json({ message: "Verification email sent" });
+    res.status(200).json({ message: "Verification email sent" });
+  } catch (error) {
+    next(error);
+  }
 };
 
-const verificationToken = async (req, res) => {
-  const { verificationToken } = req.params;
-  const user = await User.findOne({ verificationToken });
-  if (!user) {
-    res.status(404).json({ message: "User was not found." });
+const verificationToken = async (req, res, next) => {
+  try {
+    const { verificationToken } = req.params;
+    const user = await User.findOne({ verificationToken });
+    if (!user) {
+      res.status(404).json({ message: "User was not found." });
+    }
+    await User.findByIdAndUpdate(user.id, {
+      verificationToken: null,
+      verify: true,
+    });
+    res
+      .status(200)
+      .json({ message: "Verification has been successfully completed." });
+  } catch (error) {
+    next(error);
   }
-  await User.findByIdAndUpdate(user.id, {
-    verificationToken: null,
-    verify: true,
-  });
-  res
-    .status(200)
-    .json({ message: "Verification has been successfully completed." });
 };
 
 module.exports = {
